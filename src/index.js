@@ -1,45 +1,79 @@
-const http = require('http');
-const url = require('url');
+import express from 'express';
+import { accounts } from './data/accounts.js';
+import { accountSchema, accountsListSchema } from './schemas/account.js';
 
-// Mock accounts data (hardcoded)
-const accounts = [
-  { id: 'acc-1', iban: 'ES9121000418450200051332', name: 'Cuenta A' },
-  { id: 'acc-2', iban: 'DE89370400440532013000', name: 'Cuenta B' }
-];
+const app = express();
+app.use(express.json());
 
-const server = http.createServer((req, res) => {
-  const parsed = url.parse(req.url, true);
-  const pathname = parsed.pathname || '/';
-  const parts = pathname.replace(/^\/+|\/+$/g, '').split('/');
-
-  res.setHeader('Content-Type', 'application/json');
-
-  // GET /accounts -> list all accounts
-  if (req.method === 'GET' && pathname === '/accounts') {
-    res.writeHead(200);
-    res.end(JSON.stringify(accounts));
-    return;
-  }
-
-  // GET /accounts/:id -> return single account
-  if (req.method === 'GET' && parts[0] === 'accounts' && parts[1]) {
-    const account = accounts.find(a => a.id === parts[1]);
-    if (account) {
-      res.writeHead(200);
-      res.end(JSON.stringify(account));
-      return;
+// MCP Context Type handlers
+const contextHandlers = {
+  accounts: {
+    description: 'Banking accounts information',
+    schema: accountsListSchema,
+    resolve: async () => accounts
+  },
+  account: {
+    description: 'Single bank account information',
+    schema: accountSchema,
+    resolve: async (params) => {
+      const account = accounts.find(a => a.id === params?.id);
+      if (!account) {
+        throw new Error('Account not found');
+      }
+      return account;
     }
-    res.writeHead(404);
-    res.end(JSON.stringify({ error: 'Account not found' }));
-    return;
+  }
+};
+
+// MCP endpoint
+app.post('/mcp', async (req, res) => {
+  const { contextType, parameters } = req.body;
+  
+  // Validate request
+  if (!contextType || !contextHandlers[contextType]) {
+    return res.status(400).json({
+      error: 'Invalid context type',
+      validTypes: Object.keys(contextHandlers)
+    });
   }
 
-  // Not found
-  res.writeHead(404);
-  res.end(JSON.stringify({ error: 'Not found' }));
+  const handler = contextHandlers[contextType];
+
+  try {
+    const value = await handler.resolve(parameters);
+    res.json({
+      schema: handler.schema,
+      value,
+      metadata: {
+        description: handler.description
+      }
+    });
+  } catch (error) {
+    res.status(404).json({
+      error: error.message
+    });
+  }
+});
+
+// Keep REST endpoints for backwards compatibility
+app.get('/accounts', (req, res) => {
+  res.json(accounts);
+});
+
+app.get('/accounts/:id', (req, res) => {
+  const account = accounts.find(a => a.id === req.params.id);
+  if (!account) {
+    res.status(404).json({ error: 'Account not found' });
+    return;
+  }
+  res.json(account);
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Mock accounts API listening on http://localhost:${PORT}`);
+app.listen(PORT, () => {
+  console.log(`MCP Server running at http://localhost:${PORT}`);
+  console.log('Available endpoints:');
+  console.log('- REST API: /accounts and /accounts/:id');
+  console.log('- MCP endpoint: POST /mcp');
+  console.log('Available context types:', Object.keys(contextHandlers));
 });

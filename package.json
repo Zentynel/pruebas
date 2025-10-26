@@ -1,11 +1,15 @@
 {
-  "name": "pruebas-api",
+  "name": "pruebas-mcp",
   "version": "1.0.0",
-  "description": "Mock accounts API",
+  "description": "MCP server for accounts information",
   "main": "src/index.js",
+  "type": "module",
   "scripts": {
     "start": "node src/index.js"
   },
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
 }
